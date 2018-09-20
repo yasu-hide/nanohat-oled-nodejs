@@ -1,0 +1,16 @@
+{
+  "name": "nanohat-oled",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bdf-canvas": "^1.0.0",
+    "canvas": "^1.6.12",
+    "i2c-bus-promised": "^1.1.3"
+  }
+}
