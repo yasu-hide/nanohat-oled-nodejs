@@ -173,6 +173,36 @@ class OLED {
 	}
 }
 
+const fs_ = require('fs');
+const fs = fs_.promises;
+fs.watch = fs_.watch;
+
+async function watchInterrupt(pin, func) {
+	await fs.writeFile(`/sys/class/gpio/gpio${pin}/direction`, 'in');
+	await fs.writeFile(`/sys/class/gpio/gpio${pin}/edge`, 'both'); // falling raising both
+	const fh = await fs.open(`/sys/class/gpio/gpio${pin}/value`, 'r');
+	const buf = new Uint8Array(1);
+	fh.read(buf, 0, 1, 0);
+	const watcher = fs.watch(`/sys/class/gpio/gpio${pin}/value`, {}, (eventType, filename) => {
+		if (eventType === "change") {
+			fh.read(buf, 0, 1, 0);
+			const val = buf[0]-48;
+			func(val, pin);
+		} else {
+			// XXX
+			console.log(`unchecked event "${eventType}" occured with "${filename}"`);
+		}
+	});
+	return {
+		close: async () => {
+			watcher.close();
+			fh.close();
+			await fs.writeFile(`/sys/class/gpio/gpio${pin}/edge`, 'none');
+		}
+	};
+}
+
+
 async function main() {
 	const bus = new Bus(0);
 	await bus.open();
@@ -181,12 +211,11 @@ async function main() {
 	await oled.initialize();
 	await oled.clear();
 
-	const fs = require('fs');
 	const Canvas = require('canvas');
 	const BDFFont = require('bdf-canvas').BDFFont;
 	console.log(BDFFont);
 
-	const font = new BDFFont(fs.readFileSync("./mplus_f10r.bdf", "utf-8"));
+	const font = new BDFFont(await fs.readFile("./mplus_f10r.bdf", "utf-8"));
 
 	const canvas = new Canvas(128, 64);
 	const ctx = canvas.getContext("2d");
@@ -203,6 +232,21 @@ async function main() {
 	font.drawText(ctx, "OK         <        >", 1, 60);
 
 	oled.drawImage(ctx.getImageData(0, 0, 128, 64));
+
+	const interruptHandler = (val, pin) => {
+		const name = 'F' + ((pin === 0) ? 1 : pin);
+
+		ctx.fillStyle = "#000";
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+		ctx.fillStyle = "rgb(130, 244, 248)";
+		const lineHeight = 12;
+		font.drawText(ctx, `${name} clicked`, 1, lineHeight*1-2);
+		oled.drawImage(ctx.getImageData(0, 0, 128, 64));
+	};
+
+	watchInterrupt(0, interruptHandler); // F1
+	watchInterrupt(2, interruptHandler); // F2
+	watchInterrupt(3, interruptHandler); // F3
 }
 
 main();
