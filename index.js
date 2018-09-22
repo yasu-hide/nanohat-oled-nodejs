@@ -4,6 +4,7 @@
 const {Bus, Device} = require('i2c-bus-promised');
 const Canvas = require('canvas');
 const BDFFont = require('bdf-canvas').BDFFont;
+const EventEmitter = require('events');
 
 function wait(n) { return new Promise( (r) => setTimeout(r, n)) }
 
@@ -176,44 +177,91 @@ class OLED {
 	}
 }
 
+class GPIOEventEmitter extends EventEmitter {
+	constructor() {
+		super();
+		const interruptHandler = async (val, pin) => {
+			const type = val === 0 ? 'keydown' : 'keyup';
+			const name = 'F' + ((pin === 0) ? 1 : pin);
+			this.emit(type, { type: type, key: name });
+		};
+		this.watchers = [];
+		this.watchers.push(this.watchInterrupt(0, interruptHandler)); // F1
+		this.watchers.push(this.watchInterrupt(2, interruptHandler)); // F2
+		this.watchers.push(this.watchInterrupt(3, interruptHandler)); // F3
+	}
+
+	createEventQueue(events) {
+		let callback = null;
+		const queue = [];
+		for (let type of events) {
+			this.on(type, (e) => {
+				queue.push([type, e]);
+				if (callback) {
+					callback();
+					callback = null;
+				}
+			});
+		}
+		return {
+			nextEvent: () => {
+				if (queue.length) {
+					return new Promise( (resolve) => {
+						resolve(queue.shift());
+					});
+				} else {
+					return new Promise( (resolve) =>  {
+						callback = () => {
+							resolve(queue.shift());
+						};
+					});
+				}
+			}
+		};
+	}
+
+	async watchInterrupt(pin, func) {
+		try {
+			await fs.writeFile(`/sys/class/gpio/export`, `${pin}`);
+		} catch (e) {
+			if (e.code === 'EBUSY') {
+				// ignore
+			} else {
+				throw e;
+			}
+		}
+		await fs.writeFile(`/sys/class/gpio/gpio${pin}/direction`, 'in');
+		await fs.writeFile(`/sys/class/gpio/gpio${pin}/edge`, 'both'); // falling raising both
+		const fh = await fs.open(`/sys/class/gpio/gpio${pin}/value`, 'r');
+		const buf = new Uint8Array(1);
+		fh.read(buf, 0, 1, 0);
+		const watcher = fs.watch(`/sys/class/gpio/gpio${pin}/value`, {}, (eventType, filename) => {
+			if (eventType === "change") {
+				fh.read(buf, 0, 1, 0);
+				const val = buf[0]-48;
+				func(val, pin);
+			} else {
+				// XXX
+				console.log(`unchecked event "${eventType}" occured with "${filename}"`);
+			}
+		});
+		return {
+			close: async () => {
+				watcher.close();
+				fh.close();
+				await fs.writeFile(`/sys/class/gpio/gpio${pin}/edge`, 'none');
+			}
+		};
+	}
+}
+
 const fs_ = require('fs');
 const fs = fs_.promises;
 fs.watch = fs_.watch;
 fs.createWriteStream = fs_.createWriteStream;
 
-async function watchInterrupt(pin, func) {
-	try {
-		await fs.writeFile(`/sys/class/gpio/export`, `${pin}`);
-	} catch (e) {
-		if (e.code === 'EBUSY') {
-			// ignore
-		} else {
-			throw e;
-		}
-	}
-	await fs.writeFile(`/sys/class/gpio/gpio${pin}/direction`, 'in');
-	await fs.writeFile(`/sys/class/gpio/gpio${pin}/edge`, 'both'); // falling raising both
-	const fh = await fs.open(`/sys/class/gpio/gpio${pin}/value`, 'r');
-	const buf = new Uint8Array(1);
-	fh.read(buf, 0, 1, 0);
-	const watcher = fs.watch(`/sys/class/gpio/gpio${pin}/value`, {}, (eventType, filename) => {
-		if (eventType === "change") {
-			fh.read(buf, 0, 1, 0);
-			const val = buf[0]-48;
-			func(val, pin);
-		} else {
-			// XXX
-			console.log(`unchecked event "${eventType}" occured with "${filename}"`);
-		}
-	});
-	return {
-		close: async () => {
-			watcher.close();
-			fh.close();
-			await fs.writeFile(`/sys/class/gpio/gpio${pin}/edge`, 'none');
-		}
-	};
-}
+const gpioEvent = new GPIOEventEmitter();
+
 
 function convertToBinary(ctx, x, y, w, h) {
 	const imagedata = ctx.getImageData(x, y, w, h);
@@ -306,28 +354,10 @@ async function main() {
 
 	await oled.drawImage(ctx.getImageData(0, 0, 128, 64));
 
-
-	let eventCallback = null;
-	const interruptHandler = async (val, pin) => {
-		const name = 'F' + ((pin === 0) ? 1 : pin);
-		if (eventCallback) {
-			eventCallback({ type: val === 0 ? 'keydown' : 'keyup', key: name });
-		}
-	};
-
-	const newEvent = async () => {
-		return await new Promise( (resolve, reject) => {
-			eventCallback = resolve;
-		});
-	};
-
-	watchInterrupt(0, interruptHandler); // F1
-	watchInterrupt(2, interruptHandler); // F2
-	watchInterrupt(3, interruptHandler); // F3
+	const queue = gpioEvent.createEventQueue(['keydown', 'keyup']);
 
 	for (;;) {
-		const e = await newEvent();
-		console.log(e);
+		const [type, e] = await queue.nextEvent();
 
 		ctx.fillStyle = BLACK;
 		ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -336,8 +366,9 @@ async function main() {
 		ctx.scale(2, 2);
 		const lineHeight = 12;
 		font.drawText(ctx, `${e.key} ${e.type}`, 1, lineHeight*1-2);
-		await oled.drawImage(ctx.getImageData(0, 0, 128, 64));
 		ctx.restore();
+
+		await oled.drawImage(ctx.getImageData(0, 0, 128, 64));
 	}
 
 //	const out = fs.createWriteStream('text.png')
