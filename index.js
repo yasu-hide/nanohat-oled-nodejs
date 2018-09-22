@@ -354,11 +354,7 @@ async function main() {
 
 	await oled.drawImage(ctx.getImageData(0, 0, 128, 64));
 
-	const queue = gpioEvent.createEventQueue(['keydown', 'keyup']);
-
-	for (;;) {
-		const [type, e] = await queue.nextEvent();
-
+	const eventHandler = (e) => {
 		ctx.fillStyle = BLACK;
 		ctx.fillRect(0, 0, canvas.width, canvas.height);
 		ctx.fillStyle = WHITE;
@@ -367,7 +363,14 @@ async function main() {
 		const lineHeight = 12;
 		font.drawText(ctx, `${e.key} ${e.type}`, 1, lineHeight*1-2);
 		ctx.restore();
+	};
 
+	gpioEvent.on('keydown', eventHandler);
+	gpioEvent.on('keyup', eventHandler);
+
+	for (;;) {
+		// render thread
+		await wait(1000/60);
 		await oled.drawImage(ctx.getImageData(0, 0, 128, 64));
 	}
 
