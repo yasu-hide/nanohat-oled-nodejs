@@ -272,10 +272,11 @@ async function main() {
 
 	// const WHITE = "rgb(130, 244, 248)";
 	const WHITE = "#ffffff";
+	const BLACK = "#000000";
 
 	const canvas = new Canvas(128, 64);
 	const ctx = canvas.getContext("2d");
-	ctx.fillStyle = "#000";
+	ctx.fillStyle = BLACK;
 	ctx.fillRect(0, 0, canvas.width, canvas.height);
 
 	ctx.fillStyle = WHITE;
@@ -287,7 +288,7 @@ async function main() {
 
 	font.drawText(ctx, "OK         <        >", 1, 60);
 
-	ctx.fillStyle = "#000";
+	ctx.fillStyle = BLACK;
 	ctx.fillRect(0, 0, 128, 64);
 
 	ctx.fillStyle = WHITE;
@@ -309,7 +310,9 @@ async function main() {
 	let eventCallback = null;
 	const interruptHandler = async (val, pin) => {
 		const name = 'F' + ((pin === 0) ? 1 : pin);
-		if (eventCallback) eventCallback({ type: 'click', key: name });
+		if (eventCallback) {
+			eventCallback({ type: val === 0 ? 'keydown' : 'keyup', key: name });
+		}
 	};
 
 	const newEvent = async () => {
@@ -324,13 +327,17 @@ async function main() {
 
 	for (;;) {
 		const e = await newEvent();
+		console.log(e);
 
-		ctx.fillStyle = "#000";
+		ctx.fillStyle = BLACK;
 		ctx.fillRect(0, 0, canvas.width, canvas.height);
 		ctx.fillStyle = WHITE;
+		ctx.save();
+		ctx.scale(2, 2);
 		const lineHeight = 12;
-		font.drawText(ctx, `${e.key} clicked`, 1, lineHeight*1-2);
+		font.drawText(ctx, `${e.key} ${e.type}`, 1, lineHeight*1-2);
 		await oled.drawImage(ctx.getImageData(0, 0, 128, 64));
+		ctx.restore();
 	}
 
 //	const out = fs.createWriteStream('text.png')
