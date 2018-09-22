@@ -29,6 +29,7 @@ class Screen extends EventEmitter {
 		this.ctx = this.canvas.getContext("2d");
 		this.ctx.fillStyle = BLACK;
 		this.ctx.fillRect(0, 0, this.width, this.height);
+		this.requests = [];
 	}
 
 	async init() {
@@ -48,12 +49,21 @@ class Screen extends EventEmitter {
 		this.emit("load", {}, this.ctx);
 	}
 
+	requestAnimationFrame(cb) {
+		this.requests.push(cb);
+	}
+
 	async loop() {
 		await this.init();
 		let prevImageData = null;
+		let lastRenderdTime = 0;
+		const frames = 1000/30;
 		for (;;) {
+			for (let i = 0, len = this.requests.length; i < len; i++) {
+				this.requests.shift()();
+			}
+
 			// render thread
-			await wait(1000/60);
 			const imagedata = this.ctx.getImageData(0, 0, this.width, this.height);
 			let   dirty = false;
 			if (prevImageData) {
@@ -70,10 +80,15 @@ class Screen extends EventEmitter {
 				dirty = true;
 			}
 			if (dirty) {
-				console.log('write new image');
 				await this.oled.drawImage(imagedata);
 				prevImageData = imagedata;
 			}
+			const now = Date.now();
+			const w = frames - (now - lastRenderdTime);
+			if (w > 0) {
+				await wait(w);
+			}
+			lastRenderdTime = now;
 		}
 	}
 
@@ -141,80 +156,6 @@ async function loadImage(path) {
 }
 
 
-async function main() {
-	const bus = new Bus(0);
-	await bus.open();
-
-	const oled = new OLED(bus);
-	await oled.initialize();
-	await oled.clear();
-
-	const font = new BDFFont(await fs.readFile("./mplus_f10r.bdf", "utf-8"));
-
-	// const WHITE = "rgb(130, 244, 248)";
-
-	const canvas = new Canvas(128, 64);
-	const ctx = canvas.getContext("2d");
-	ctx.fillStyle = BLACK;
-	ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-	ctx.fillStyle = WHITE;
-	const lineHeight = 12;
-	font.drawText(ctx, "123456789012345678901", 1, lineHeight*1-2);
-	font.drawText(ctx, "123456789012345678901", 1, lineHeight*2-2);
-	font.drawText(ctx, "123456789012345678901", 1, lineHeight*3-2);
-	font.drawText(ctx, "123456789012345678901", 1, lineHeight*4-2);
-
-	font.drawText(ctx, "OK         <        >", 1, 60);
-
-	ctx.fillStyle = BLACK;
-	ctx.fillRect(0, 0, 128, 64);
-
-	ctx.fillStyle = WHITE;
-	font.drawText(ctx, "init", 65, lineHeight*1-2);
-	font.drawText(ctx, "2345678901", 65, lineHeight*2-2);
-	font.drawText(ctx, "2345678901", 65, lineHeight*3-2);
-	font.drawText(ctx, "2345678901", 65, lineHeight*4-2);
-	font.drawText(ctx, "2345678901", 65, lineHeight*5-2);
-
-	const img = await loadImage("./foo.jpg");
-	ctx.drawImage(img, 0, 0, 64, 64);
-
-	const id = convertToBinary(ctx, 0, 0, 64, 64);
-	ctx.putImageData(id, 0, 0);
-
-	await oled.drawImage(ctx.getImageData(0, 0, 128, 64));
-
-	const eventHandler = (e) => {
-	};
-
-	gpioEvent.on('keydown', eventHandler);
-	gpioEvent.on('keyup', eventHandler);
-
-	for (;;) {
-		// render thread
-		await wait(1000/60);
-		await oled.drawImage(ctx.getImageData(0, 0, 128, 64));
-	}
-
-//	const out = fs.createWriteStream('text.png')
-//	const stream = canvas.pngStream();
-//
-//	stream.on('data', function(chunk){
-//		out.write(chunk);
-//	});
-//
-//	stream.on('end', function(){
-//		console.log('saved png');
-//	});
-}
-
-//try {
-//	main();
-//} catch (e) {
-//	console.log(e);
-//}
-
 (async () => {
 	const font = new BDFFont(await fs.readFile("./mplus_f10r.bdf", "utf-8"));
 	const lines = [];
@@ -251,7 +192,12 @@ async function main() {
 		ctx.putImageData(id, 0, 0);
 
 		setInterval( () => {
-			print(strftime("%Y-%m-%d %H:%M:%S", new Date()));
+			lines.length = 0;
+			ctx.save();
+			ctx.scale(2, 2);
+			print(strftime("%Y-%m-%d", new Date()));
+			print(strftime("%H:%M:%S", new Date()));
+			ctx.restore();
 		}, 1000);
 	});
 
