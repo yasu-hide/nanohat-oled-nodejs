@@ -192,33 +192,25 @@ async function loadImage(path) {
 		ctx.putImageData(id, 0, 0);
 
 		setInterval( () => {
-			lines.length = 0;
+			const now = new Date();
+			screen.clear();
 			ctx.save();
 			ctx.scale(2, 2);
-			print(strftime("%Y-%m-%d", new Date()));
-			print(strftime("%H:%M:%S", new Date()));
+			font.drawText(screen.ctx, strftime("%Y-%m-%d", new Date()), 1, lineHeight*(1)-2);
+			font.drawText(screen.ctx, strftime("%H:%M:%S", new Date()), 1, lineHeight*(2)-2);
 			ctx.restore();
 		}, 1000);
 	});
 
+	let i = 0;
 	screen.on('keydown', (e, ctx) => {
 		console.log(e);
-		screen.clear();
-		ctx.save();
-		ctx.scale(2, 2);
-		const lineHeight = 12;
-		font.drawText(ctx, `${e.key} ${e.type}`, 1, lineHeight*1-2);
-		ctx.restore();
+		print(`${i++} ${e.key} ${e.type}`);
 	});
 
 	screen.on('keyup', (e, ctx) => {
 		console.log(e);
-		screen.clear();
-		ctx.save();
-		ctx.scale(2, 2);
-		const lineHeight = 12;
-		font.drawText(ctx, `${e.key} ${e.type}`, 1, lineHeight*1-2);
-		ctx.restore();
+		print(`${i++} ${e.key} ${e.type}`);
 	});
 
 })();
