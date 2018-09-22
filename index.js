@@ -31,6 +31,7 @@ class OLED {
 
 	constructor(bus) {
 		this.device = new Device(bus, I2C_ADDRESS)
+		this.updating = false;
 	}
 
 	async writeCommand(c) {
@@ -181,6 +182,15 @@ fs.watch = fs_.watch;
 fs.createWriteStream = fs_.createWriteStream;
 
 async function watchInterrupt(pin, func) {
+	try {
+		await fs.writeFile(`/sys/class/gpio/export`, `${pin}`);
+	} catch (e) {
+		if (e.code === 'EBUSY') {
+			// ignore
+		} else {
+			throw e;
+		}
+	}
 	await fs.writeFile(`/sys/class/gpio/gpio${pin}/direction`, 'in');
 	await fs.writeFile(`/sys/class/gpio/gpio${pin}/edge`, 'both'); // falling raising both
 	const fh = await fs.open(`/sys/class/gpio/gpio${pin}/value`, 'r');
@@ -281,7 +291,7 @@ async function main() {
 	ctx.fillRect(0, 0, 128, 64);
 
 	ctx.fillStyle = WHITE;
-	font.drawText(ctx, "preventDef", 65, lineHeight*1-2);
+	font.drawText(ctx, "init", 65, lineHeight*1-2);
 	font.drawText(ctx, "2345678901", 65, lineHeight*2-2);
 	font.drawText(ctx, "2345678901", 65, lineHeight*3-2);
 	font.drawText(ctx, "2345678901", 65, lineHeight*4-2);
@@ -293,33 +303,50 @@ async function main() {
 	const id = convertToBinary(ctx, 0, 0, 64, 64);
 	ctx.putImageData(id, 0, 0);
 
-	oled.drawImage(ctx.getImageData(0, 0, 128, 64));
+	await oled.drawImage(ctx.getImageData(0, 0, 128, 64));
 
-	const interruptHandler = (val, pin) => {
+
+	let eventCallback = null;
+	const interruptHandler = async (val, pin) => {
 		const name = 'F' + ((pin === 0) ? 1 : pin);
+		if (eventCallback) eventCallback({ type: 'click', key: name });
+	};
+
+	const newEvent = async () => {
+		return await new Promise( (resolve, reject) => {
+			eventCallback = resolve;
+		});
+	};
+
+	watchInterrupt(0, interruptHandler); // F1
+	watchInterrupt(2, interruptHandler); // F2
+	watchInterrupt(3, interruptHandler); // F3
+
+	for (;;) {
+		const e = await newEvent();
 
 		ctx.fillStyle = "#000";
 		ctx.fillRect(0, 0, canvas.width, canvas.height);
 		ctx.fillStyle = WHITE;
 		const lineHeight = 12;
-		font.drawText(ctx, `${name} clicked`, 1, lineHeight*1-2);
-		oled.drawImage(ctx.getImageData(0, 0, 128, 64));
-	};
+		font.drawText(ctx, `${e.key} clicked`, 1, lineHeight*1-2);
+		await oled.drawImage(ctx.getImageData(0, 0, 128, 64));
+	}
 
-	const out = fs.createWriteStream('text.png')
-	const stream = canvas.pngStream();
-
-	stream.on('data', function(chunk){
-		out.write(chunk);
-	});
-
-	stream.on('end', function(){
-		console.log('saved png');
-	});
-
-//	watchInterrupt(0, interruptHandler); // F1
-//	watchInterrupt(2, interruptHandler); // F2
-//	watchInterrupt(3, interruptHandler); // F3
+//	const out = fs.createWriteStream('text.png')
+//	const stream = canvas.pngStream();
+//
+//	stream.on('data', function(chunk){
+//		out.write(chunk);
+//	});
+//
+//	stream.on('end', function(){
+//		console.log('saved png');
+//	});
 }
 
-main();
+try {
+	main();
+} catch (e) {
+	console.log(e);
+}
