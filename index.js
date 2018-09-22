@@ -1,99 +1,99 @@
 //#!/usr/bin/env node
 
 
+const EventEmitter = require('events');
 const {Bus, Device} = require('i2c-bus-promised');
 const Canvas = require('canvas');
 const BDFFont = require('bdf-canvas').BDFFont;
-const EventEmitter = require('events');
+const strftime = require('strftime');
+
 const {OLED} = require('./oled.js');
-
-function wait(n) { return new Promise( (r) => setTimeout(r, n)) }
-
-
-class GPIOEventEmitter extends EventEmitter {
-	constructor() {
-		super();
-		const interruptHandler = async (val, pin) => {
-			const type = val === 0 ? 'keydown' : 'keyup';
-			const name = 'F' + ((pin === 0) ? 1 : pin);
-			this.emit(type, { type: type, key: name });
-		};
-		this.watchers = [];
-		this.watchers.push(this.watchInterrupt(0, interruptHandler)); // F1
-		this.watchers.push(this.watchInterrupt(2, interruptHandler)); // F2
-		this.watchers.push(this.watchInterrupt(3, interruptHandler)); // F3
-	}
-
-	createEventQueue(events) {
-		let callback = null;
-		const queue = [];
-		for (let type of events) {
-			this.on(type, (e) => {
-				queue.push([type, e]);
-				if (callback) {
-					callback();
-					callback = null;
-				}
-			});
-		}
-		return {
-			nextEvent: () => {
-				if (queue.length) {
-					return new Promise( (resolve) => {
-						resolve(queue.shift());
-					});
-				} else {
-					return new Promise( (resolve) =>  {
-						callback = () => {
-							resolve(queue.shift());
-						};
-					});
-				}
-			}
-		};
-	}
-
-	async watchInterrupt(pin, func) {
-		try {
-			await fs.writeFile(`/sys/class/gpio/export`, `${pin}`);
-		} catch (e) {
-			if (e.code === 'EBUSY') {
-				// ignore
-			} else {
-				throw e;
-			}
-		}
-		await fs.writeFile(`/sys/class/gpio/gpio${pin}/direction`, 'in');
-		await fs.writeFile(`/sys/class/gpio/gpio${pin}/edge`, 'both'); // falling raising both
-		const fh = await fs.open(`/sys/class/gpio/gpio${pin}/value`, 'r');
-		const buf = new Uint8Array(1);
-		fh.read(buf, 0, 1, 0);
-		const watcher = fs.watch(`/sys/class/gpio/gpio${pin}/value`, {}, (eventType, filename) => {
-			if (eventType === "change") {
-				fh.read(buf, 0, 1, 0);
-				const val = buf[0]-48;
-				func(val, pin);
-			} else {
-				// XXX
-				console.log(`unchecked event "${eventType}" occured with "${filename}"`);
-			}
-		});
-		return {
-			close: async () => {
-				watcher.close();
-				fh.close();
-				await fs.writeFile(`/sys/class/gpio/gpio${pin}/edge`, 'none');
-			}
-		};
-	}
-}
+const {GPIOEventEmitter} = require('./gpioemitter.js');
 
 const fs_ = require('fs');
 const fs = fs_.promises;
-fs.watch = fs_.watch;
 fs.createWriteStream = fs_.createWriteStream;
 
-const gpioEvent = new GPIOEventEmitter();
+function wait(n) { return new Promise( (r) => setTimeout(r, n)) }
+
+const WHITE = "#ffffff";
+const BLACK = "#000000";
+
+class Screen extends EventEmitter {
+	get width() { return 128; }
+	get height() { return 64; }
+
+	constructor() {
+		super();
+		this.canvas = new Canvas(this.width, this.height);
+		this.ctx = this.canvas.getContext("2d");
+		this.ctx.fillStyle = BLACK;
+		this.ctx.fillRect(0, 0, this.width, this.height);
+	}
+
+	async init() {
+		this.bus = new Bus(0);
+		await this.bus.open();
+
+		this.gpioEvent = new GPIOEventEmitter();
+		const eventHandler = (e) => {
+			this.emit(e.type, e, this.ctx);
+		};
+		this.gpioEvent.on('keydown', eventHandler);
+		this.gpioEvent.on('keyup', eventHandler);
+
+		this.oled = new OLED(this.bus);
+		await this.oled.initialize();
+		await this.oled.clear();
+		this.emit("load", {}, this.ctx);
+	}
+
+	async loop() {
+		await this.init();
+		let prevImageData = null;
+		for (;;) {
+			// render thread
+			await wait(1000/60);
+			const imagedata = this.ctx.getImageData(0, 0, this.width, this.height);
+			let   dirty = false;
+			if (prevImageData) {
+				const prev = prevImageData.data;
+				const next = imagedata.data;
+				const len  = next.length;
+				for (let i = 0; i < len; i++) {
+					if (prev[i] !== next[i]) {
+						dirty = true;
+						break;
+					}
+				}
+			} else {
+				dirty = true;
+			}
+			if (dirty) {
+				console.log('write new image');
+				await this.oled.drawImage(imagedata);
+				prevImageData = imagedata;
+			}
+		}
+	}
+
+	clear() {
+		const ctx = this.ctx;
+		ctx.fillStyle = BLACK;
+		ctx.fillRect(0, 0, this.width, this.height);
+		ctx.fillStyle = WHITE;
+	}
+}
+Screen.getInstance = () => {
+	if (!Screen._instance) {
+		Screen._instance = new Screen();
+	}
+	return Screen._instance;
+};
+
+const screen = Screen.getInstance();
+
+
 
 
 function convertToBinary(ctx, x, y, w, h) {
@@ -152,8 +152,6 @@ async function main() {
 	const font = new BDFFont(await fs.readFile("./mplus_f10r.bdf", "utf-8"));
 
 	// const WHITE = "rgb(130, 244, 248)";
-	const WHITE = "#ffffff";
-	const BLACK = "#000000";
 
 	const canvas = new Canvas(128, 64);
 	const ctx = canvas.getContext("2d");
@@ -188,14 +186,6 @@ async function main() {
 	await oled.drawImage(ctx.getImageData(0, 0, 128, 64));
 
 	const eventHandler = (e) => {
-		ctx.fillStyle = BLACK;
-		ctx.fillRect(0, 0, canvas.width, canvas.height);
-		ctx.fillStyle = WHITE;
-		ctx.save();
-		ctx.scale(2, 2);
-		const lineHeight = 12;
-		font.drawText(ctx, `${e.key} ${e.type}`, 1, lineHeight*1-2);
-		ctx.restore();
 	};
 
 	gpioEvent.on('keydown', eventHandler);
@@ -219,8 +209,71 @@ async function main() {
 //	});
 }
 
-try {
-	main();
-} catch (e) {
-	console.log(e);
-}
+//try {
+//	main();
+//} catch (e) {
+//	console.log(e);
+//}
+
+(async () => {
+	const font = new BDFFont(await fs.readFile("./mplus_f10r.bdf", "utf-8"));
+	const lines = [];
+	const lineHeight = 12;
+	function print(str) {
+		lines.push(String(str));
+		while (lines.length > 5) lines.shift();
+
+		screen.clear();
+		for (let i = 0; i < lines.length; i++) {
+			font.drawText(screen.ctx, lines[i], 1, lineHeight*(i+1)-2);
+		}
+	}
+
+	screen.on('load', async (e, ctx) => {
+		console.log('load');
+		screen.clear();
+
+		/*
+		print("init");
+		for (let i = 0; i < 10; i++) {
+			print(".....................")
+			await wait(100);
+		}
+
+		await wait(3000);
+		*/
+
+		screen.clear();
+		font.drawText(ctx, "init", 65, lineHeight*1-2);
+		const img = await loadImage("./foo.jpg");
+		ctx.drawImage(img, 0, 0, 64, 64);
+		const id = convertToBinary(ctx, 0, 0, 64, 64);
+		ctx.putImageData(id, 0, 0);
+
+		setInterval( () => {
+			print(strftime("%Y-%m-%d %H:%M:%S", new Date()));
+		}, 1000);
+	});
+
+	screen.on('keydown', (e, ctx) => {
+		console.log(e);
+		screen.clear();
+		ctx.save();
+		ctx.scale(2, 2);
+		const lineHeight = 12;
+		font.drawText(ctx, `${e.key} ${e.type}`, 1, lineHeight*1-2);
+		ctx.restore();
+	});
+
+	screen.on('keyup', (e, ctx) => {
+		console.log(e);
+		screen.clear();
+		ctx.save();
+		ctx.scale(2, 2);
+		const lineHeight = 12;
+		font.drawText(ctx, `${e.key} ${e.type}`, 1, lineHeight*1-2);
+		ctx.restore();
+	});
+
+})();
+screen.loop();

@@ -11,6 +11,7 @@
   "dependencies": {
     "bdf-canvas": "^1.0.0",
     "canvas": "^1.6.12",
-    "i2c-bus-promised": "^1.1.3"
+    "i2c-bus-promised": "^1.1.3",
+    "strftime": "^0.10.0"
   }
 }
