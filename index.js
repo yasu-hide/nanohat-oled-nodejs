@@ -14,7 +14,9 @@ const fs_ = require('fs');
 const fs = fs_.promises;
 fs.createWriteStream = fs_.createWriteStream;
 
-function wait(n) { return new Promise( (r) => setTimeout(r, n)) }
+const wait = (n) => {
+	return new Promise( (r) => setTimeout(r, n))
+};
 
 const WHITE = "#ffffff";
 const BLACK = "#000000";
@@ -108,10 +110,7 @@ Screen.getInstance = () => {
 
 const screen = Screen.getInstance();
 
-
-
-
-function convertToBinary(ctx, x, y, w, h) {
+const convertToBinary = (ctx, x, y, w, h) => {
 	const imagedata = ctx.getImageData(x, y, w, h);
 	const data = imagedata.data;
 	// Conver to grayscale (use RED position for retaining pixel)
@@ -144,23 +143,22 @@ function convertToBinary(ctx, x, y, w, h) {
 		}
 	}
 	return imagedata;
-}
+};
 
-async function loadImage(path) {
+const loadImage = async (path) => {
 	return new Promise( async (resolve, reject) => {
 		const img = new Canvas.Image();
 		img.onload = () => { resolve(img) };
 		img.onerror = reject;
 		img.src = await fs.readFile(path, null).catch((err) => reject(err));
 	});
-}
-
+};
 
 (async () => {
 	const font = new BDFFont(await fs.readFile("./mplus_f10r.bdf", "utf-8"));
 	const lines = [];
 	const lineHeight = 12;
-	function print(str) {
+	const print = (str) => {
 		lines.push(String(str));
 		while (lines.length > 5) lines.shift();
 
@@ -168,7 +166,7 @@ async function loadImage(path) {
 		for (let i = 0; i < lines.length; i++) {
 			font.drawText(screen.ctx, lines[i], 1, lineHeight*(i+1)-2);
 		}
-	}
+	};
 
 	screen.on('load', async (e, ctx) => {
 		console.log('load');
