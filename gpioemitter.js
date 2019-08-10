@@ -12,9 +12,9 @@ class GPIOEventEmitter extends EventEmitter {
 			this.emit(type, { type: type, key: name });
 		};
 		this.watchers = [];
-		this.watchers.push(this.watchInterrupt(0, interruptHandler)); // F1
-		this.watchers.push(this.watchInterrupt(2, interruptHandler)); // F2
-		this.watchers.push(this.watchInterrupt(3, interruptHandler)); // F3
+		this.watchers.push(this.watchInterrupt(0, interruptHandler).catch((err) => console.error(err.message))); // F1
+		this.watchers.push(this.watchInterrupt(2, interruptHandler).catch((err) => console.error(err.message))); // F2
+		this.watchers.push(this.watchInterrupt(3, interruptHandler).catch((err) => console.error(err.message))); // F3
 	}
 
 	createEventQueue(events) {
@@ -47,15 +47,12 @@ class GPIOEventEmitter extends EventEmitter {
 	}
 
 	async watchInterrupt(pin, func) {
-		try {
-			await fs.writeFile(`/sys/class/gpio/export`, `${pin}`);
-		} catch (e) {
-			if (e.code === 'EBUSY') {
-				// ignore
-			} else {
+		await fs.writeFile(`/sys/class/gpio/export`, `${pin}`).catch((e) => {
+			if(e.code !== 'EBUSY') {
 				throw e;
 			}
-		}
+		});
+
 		await fs.writeFile(`/sys/class/gpio/gpio${pin}/direction`, 'in');
 		await fs.writeFile(`/sys/class/gpio/gpio${pin}/edge`, 'both'); // falling raising both
 		const fh = await fs.open(`/sys/class/gpio/gpio${pin}/value`, 'r');

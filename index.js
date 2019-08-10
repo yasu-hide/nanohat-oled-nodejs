@@ -147,11 +147,11 @@ function convertToBinary(ctx, x, y, w, h) {
 }
 
 async function loadImage(path) {
-	return await new Promise( async (resolve, reject) => {
+	return new Promise( async (resolve, reject) => {
 		const img = new Canvas.Image();
 		img.onload = () => { resolve(img) };
 		img.onerror = reject;
-		img.src = await fs.readFile(path, null);
+		img.src = await fs.readFile(path, null).catch((err) => reject(err));
 	});
 }
 
@@ -186,10 +186,12 @@ async function loadImage(path) {
 
 		screen.clear();
 		font.drawText(ctx, "init", 65, lineHeight*1-2);
-		const img = await loadImage("./foo.jpg");
-		ctx.drawImage(img, 0, 0, 64, 64);
-		const id = convertToBinary(ctx, 0, 0, 64, 64);
-		ctx.putImageData(id, 0, 0);
+		loadImage("./foo.jpg").then((img) => {
+			ctx.drawImage(img, 0, 0, 64, 64);
+			const id = convertToBinary(ctx, 0, 0, 64, 64);
+			ctx.putImageData(id, 0, 0);
+			return Promise.resolve();
+		}).catch((err) => console.error(err.message));
 
 		setInterval( () => {
 			const now = new Date();
