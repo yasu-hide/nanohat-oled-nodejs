@@ -194,7 +194,6 @@ async function loadImage(path) {
 		}).catch((err) => console.error(err.message));
 
 		setInterval( () => {
-			const now = new Date();
 			screen.clear();
 			ctx.save();
 			ctx.scale(2, 2);
