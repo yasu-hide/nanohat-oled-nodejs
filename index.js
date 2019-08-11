@@ -8,6 +8,7 @@ const strftime = require('strftime');
 const {OLED} = require('./oled.js');
 const {GPIOEventEmitter} = require('./gpioemitter.js');
 
+const os = require('os');
 const fs_ = require('fs');
 const fs = fs_.promises;
 fs.createWriteStream = fs_.createWriteStream;
@@ -145,16 +146,9 @@ const convertToBinary = (ctx, x, y, w, h) => {
 
 (async () => {
 	const font = new BDFFont(await fs.readFile("./mplus_f10r.bdf", "utf-8"));
-	const lines = [];
 	const lineHeight = 12;
-	const print = (str) => {
-		lines.push(String(str));
-		while (lines.length > 5) lines.shift();
-
-		screen.clear();
-		for (let i = 0; i < lines.length; i++) {
-			font.drawText(screen.ctx, lines[i], 1, lineHeight*(i+1)-2);
-		}
+	const print = (str, pos) => {
+		font.drawText(screen.ctx, str, 1, lineHeight*(pos) - 2);
 	};
 
 	const drawImage = async (path='/tmp/logo_img') => {
@@ -170,18 +164,34 @@ const convertToBinary = (ctx, x, y, w, h) => {
 	};
 
 		/*
-		print("init");
+		print("init", 0);
 		for (let i = 0; i < 10; i++) {
-			print(".....................")
+			print(".....................", 1)
 			await wait(100);
 		}
 
 		await wait(3000);
 		*/
+	const drawInformation = () => {
+		console.log("drawInformation");
+		const memtotal = os.totalmem();
+		const memfree = os.freemem();
+		const memfreepercent = parseInt(memfree / memtotal * 100);
+		const loadavg = os.loadavg();
+		let lines = 1;
+		print("loadavg:" + Math.round(loadavg[0] * 10) / 10 + ' ' +  Math.round(loadavg[1] * 10) / 10 + ' ' + Math.round(loadavg[2] * 10) / 10, lines);
+		lines++;
+		print("mem:" + parseInt(memtotal / 1024 / 1024) + 'M ' + parseInt(memfree / 1024 / 1024) + 'M ' + memfreepercent + '%', lines);
+		lines++;
+		return;
+	};
 
 	const drawSelector = (pressed_key) => {
 		screen.clear();
 		switch(pressed_key) {
+			case 'F2':
+				drawInformation();
+				break;
 			case 'F3':
 			default:
 				drawImage();
