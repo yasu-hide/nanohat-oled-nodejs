@@ -143,15 +143,6 @@ const convertToBinary = (ctx, x, y, w, h) => {
 	return imagedata;
 };
 
-const loadImage = async (path) => {
-	return new Promise( async (resolve, reject) => {
-		const img = new Canvas.Image();
-		img.onload = () => { resolve(img) };
-		img.onerror = reject;
-		img.src = await fs.readFile(path, null).catch((err) => reject(err));
-	});
-};
-
 (async () => {
 	const font = new BDFFont(await fs.readFile("./mplus_f10r.bdf", "utf-8"));
 	const lines = [];
@@ -166,9 +157,17 @@ const loadImage = async (path) => {
 		}
 	};
 
-	screen.on('load', async (e, ctx) => {
-		console.log('load');
-		screen.clear();
+	const drawImage = async (path='/tmp/logo_img') => {
+		console.log("drawImage");
+		const img = new Canvas.Image();
+		img.onload = () => {
+			screen.ctx.drawImage(img, 0, 0, screen.width, screen.height);
+			const id = convertToBinary(screen.ctx, 0, 0, screen.width, screen.height);
+			screen.ctx.putImageData(id, 0, 0);
+		};
+		img.onerror = console.error;
+		img.src = await fs.readFile(path, null).catch((err) => console.error(err))
+	};
 
 		/*
 		print("init");
@@ -180,34 +179,29 @@ const loadImage = async (path) => {
 		await wait(3000);
 		*/
 
+	const drawSelector = (pressed_key) => {
 		screen.clear();
-		font.drawText(ctx, "init", 65, lineHeight*1-2);
-		loadImage("./foo.jpg").then((img) => {
-			ctx.drawImage(img, 0, 0, 64, 64);
-			const id = convertToBinary(ctx, 0, 0, 64, 64);
-			ctx.putImageData(id, 0, 0);
-			return Promise.resolve();
-		}).catch((err) => console.error(err.message));
+		switch(pressed_key) {
+			case 'F3':
+			default:
+				drawImage();
+				break;
+		}
+	};
 
-		setInterval( () => {
-			screen.clear();
-			ctx.save();
-			ctx.scale(2, 2);
-			font.drawText(screen.ctx, strftime("%Y-%m-%d", new Date()), 1, lineHeight*(1)-2);
-			font.drawText(screen.ctx, strftime("%H:%M:%S", new Date()), 1, lineHeight*(2)-2);
-			ctx.restore();
-		}, 1000);
+	screen.on('load', async (e, ctx) => {
+		console.log("loaded.");
+		drawSelector();
 	});
 
-	let i = 0;
 	screen.on('keydown', (e, ctx) => {
-		console.log(e);
-		print(`${i++} ${e.key} ${e.type}`);
+		console.log("Key", e.key, "pressed.");
+		drawSelector(e.key);
 	});
 
 	screen.on('keyup', (e, ctx) => {
-		console.log(e);
-		print(`${i++} ${e.key} ${e.type}`);
+		console.log("Key", e.key, "pressed.");
+		drawSelector(e.key);
 	});
 
 })();
