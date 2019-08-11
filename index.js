@@ -15,7 +15,7 @@ const fs = fs_.promises;
 fs.createWriteStream = fs_.createWriteStream;
 
 const wait = (n) => {
-	return new Promise( (r) => setTimeout(r, n))
+	return new Promise( (r) => setTimeout(r, n));
 };
 
 const WHITE = "#ffffff";
