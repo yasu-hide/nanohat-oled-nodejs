@@ -1,6 +1,4 @@
-//#!/usr/bin/env node
-
-
+'use strict'
 const EventEmitter = require('events');
 const {Bus, Device} = require('i2c-bus-promised');
 const Canvas = require('canvas');
@@ -10,12 +8,13 @@ const strftime = require('strftime');
 const {OLED} = require('./oled.js');
 const {GPIOEventEmitter} = require('./gpioemitter.js');
 
+const os = require('os');
 const fs_ = require('fs');
 const fs = fs_.promises;
 fs.createWriteStream = fs_.createWriteStream;
 
 const wait = (n) => {
-	return new Promise( (r) => setTimeout(r, n))
+	return new Promise( (r) => setTimeout(r, n));
 };
 
 const WHITE = "#ffffff";
@@ -145,71 +144,85 @@ const convertToBinary = (ctx, x, y, w, h) => {
 	return imagedata;
 };
 
-const loadImage = async (path) => {
-	return new Promise( async (resolve, reject) => {
-		const img = new Canvas.Image();
-		img.onload = () => { resolve(img) };
-		img.onerror = reject;
-		img.src = await fs.readFile(path, null).catch((err) => reject(err));
-	});
-};
-
 (async () => {
 	const font = new BDFFont(await fs.readFile("./mplus_f10r.bdf", "utf-8"));
-	const lines = [];
 	const lineHeight = 12;
-	const print = (str) => {
-		lines.push(String(str));
-		while (lines.length > 5) lines.shift();
+	const print = (str, pos) => {
+		font.drawText(screen.ctx, str, 1, lineHeight*(pos) - 2);
+	};
+	let clockInterval = [];
 
+	const drawImage = async (path='/tmp/logo_img') => {
+		console.log("drawImage");
+		const img = new Canvas.Image();
+		img.onload = () => {
+			screen.ctx.drawImage(img, 0, 0, screen.width, screen.height);
+			const id = convertToBinary(screen.ctx, 0, 0, screen.width, screen.height);
+			screen.ctx.putImageData(id, 0, 0);
+		};
+		img.onerror = console.error;
+		img.src = await fs.readFile(path, null).catch((err) => console.error(err))
+	};
+
+	const drawClock = () => {
+		console.log("drawClock");
+		clockInterval.push(setInterval(() => {
+			screen.clear();
+			screen.ctx.save();
+			screen.ctx.scale(2, 2);
+			const now = new Date();
+			print(strftime("%Y-%m-%d", now), 1);
+			print(strftime("%H:%M:%S", now), 2);
+			screen.ctx.restore();
+		}, 1000));
+	};
+
+	const drawInformation = () => {
+		console.log("drawInformation");
+		const memtotal = os.totalmem();
+		const memfree = os.freemem();
+		const memfreepercent = parseInt(memfree / memtotal * 100);
+		const loadavg = os.loadavg();
+		let lines = 1;
+		print("loadavg:" + Math.round(loadavg[0] * 10) / 10 + ' ' +  Math.round(loadavg[1] * 10) / 10 + ' ' + Math.round(loadavg[2] * 10) / 10, lines);
+		lines++;
+		print("mem:" + parseInt(memtotal / 1024 / 1024) + 'M ' + parseInt(memfree / 1024 / 1024) + 'M ' + memfreepercent + '%', lines);
+		lines++;
+		return;
+	};
+
+	const drawSelector = (pressed_key) => {
 		screen.clear();
-		for (let i = 0; i < lines.length; i++) {
-			font.drawText(screen.ctx, lines[i], 1, lineHeight*(i+1)-2);
+		clockInterval.forEach((itvlId) => {
+			clearInterval(itvlId);
+		});
+		switch(pressed_key) {
+			case 'F1':
+				drawClock();
+				break;
+			case 'F2':
+				drawInformation();
+				break;
+			case 'F3':
+			default:
+				drawImage();
+				break;
 		}
 	};
 
 	screen.on('load', async (e, ctx) => {
-		console.log('load');
-		screen.clear();
-
-		/*
-		print("init");
-		for (let i = 0; i < 10; i++) {
-			print(".....................")
-			await wait(100);
-		}
-
-		await wait(3000);
-		*/
-
-		screen.clear();
-		font.drawText(ctx, "init", 65, lineHeight*1-2);
-		loadImage("./foo.jpg").then((img) => {
-			ctx.drawImage(img, 0, 0, 64, 64);
-			const id = convertToBinary(ctx, 0, 0, 64, 64);
-			ctx.putImageData(id, 0, 0);
-			return Promise.resolve();
-		}).catch((err) => console.error(err.message));
-
-		setInterval( () => {
-			screen.clear();
-			ctx.save();
-			ctx.scale(2, 2);
-			font.drawText(screen.ctx, strftime("%Y-%m-%d", new Date()), 1, lineHeight*(1)-2);
-			font.drawText(screen.ctx, strftime("%H:%M:%S", new Date()), 1, lineHeight*(2)-2);
-			ctx.restore();
-		}, 1000);
+		console.log("loaded.");
+		drawSelector();
 	});
 
-	let i = 0;
 	screen.on('keydown', (e, ctx) => {
-		console.log(e);
-		print(`${i++} ${e.key} ${e.type}`);
+		console.log("Key", e.key, "pressed.");
+		drawSelector(e.key);
 	});
 
 	screen.on('keyup', (e, ctx) => {
-		console.log(e);
-		print(`${i++} ${e.key} ${e.type}`);
+		console.log("Key", e.key, "pressed.");
+		drawSelector(e.key);
 	});
 
 })();
