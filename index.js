@@ -150,6 +150,7 @@ const convertToBinary = (ctx, x, y, w, h) => {
 	const print = (str, pos) => {
 		font.drawText(screen.ctx, str, 1, lineHeight*(pos) - 2);
 	};
+	let clockInterval = [];
 
 	const drawImage = async (path='/tmp/logo_img') => {
 		console.log("drawImage");
@@ -163,15 +164,19 @@ const convertToBinary = (ctx, x, y, w, h) => {
 		img.src = await fs.readFile(path, null).catch((err) => console.error(err))
 	};
 
-		/*
-		print("init", 0);
-		for (let i = 0; i < 10; i++) {
-			print(".....................", 1)
-			await wait(100);
-		}
+	const drawClock = () => {
+		console.log("drawClock");
+		clockInterval.push(setInterval(() => {
+			screen.clear();
+			screen.ctx.save();
+			screen.ctx.scale(2, 2);
+			const now = new Date();
+			print(strftime("%Y-%m-%d", now), 1);
+			print(strftime("%H:%M:%S", now), 2);
+			screen.ctx.restore();
+		}, 1000));
+	};
 
-		await wait(3000);
-		*/
 	const drawInformation = () => {
 		console.log("drawInformation");
 		const memtotal = os.totalmem();
@@ -188,7 +193,13 @@ const convertToBinary = (ctx, x, y, w, h) => {
 
 	const drawSelector = (pressed_key) => {
 		screen.clear();
+		clockInterval.forEach((itvlId) => {
+			clearInterval(itvlId);
+		});
 		switch(pressed_key) {
+			case 'F1':
+				drawClock();
+				break;
 			case 'F2':
 				drawInformation();
 				break;
