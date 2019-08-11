@@ -1,6 +1,4 @@
-//#!/usr/bin/env node
-
-
+'use strict'
 const EventEmitter = require('events');
 const {Bus, Device} = require('i2c-bus-promised');
 const Canvas = require('canvas');
